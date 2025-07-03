@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, Request},
+    extract::{Query, Request, State},
     response::Response,
 };
 use std::collections::HashMap;
@@ -11,8 +11,10 @@ use crate::utils::{
     headers::{build_request_headers, build_response_headers},
     client::create_optimized_client,
 };
+use crate::config::AppState;
 
 pub async fn proxy_handler(
+    State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
     request: Request<axum::body::Body>,
 ) -> Response {
@@ -53,7 +55,7 @@ pub async fn proxy_handler(
     let stream_type = StreamType::from_params(&proxy_params.stream_type, url, &content_type);
 
     match stream_type {
-        StreamType::Manifest => handle_manifest_response(resp, url, status, content_type).await,
+        StreamType::Manifest => handle_manifest_response(resp, url, status, content_type, state.server_addr).await,
         StreamType::Mp4 => handle_streaming_response(resp, status, response_headers, "video/mp4").await,
         StreamType::Other => handle_streaming_response(resp, status, response_headers, content_type.to_str().unwrap_or("application/octet-stream")).await,
     }
@@ -65,6 +67,7 @@ async fn handle_manifest_response(
     url: &str,
     status: reqwest::StatusCode,
     content_type: axum::http::HeaderValue,
+    server_addr: std::net::SocketAddr,
 ) -> Response {
   
     let body_bytes = match resp.bytes().await {
@@ -80,7 +83,7 @@ async fn handle_manifest_response(
     };
     
   
-    let rewritten_manifest = rewrite_manifest_urls(&manifest_content, &base_url);
+    let rewritten_manifest = rewrite_manifest_urls(&manifest_content, &base_url, server_addr);
     
     Response::builder()
         .status(status)
